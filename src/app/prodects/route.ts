@@ -10,13 +10,13 @@ export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request);
   if (!session?.simple_auth) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login", request.url), 303);
   }
 
   const formData = await request.formData();
   const parsed = parseStoreProdectFormData(formData);
   if (!parsed.success) {
-    return NextResponse.redirect(new URL("/prodects/create?error=Validation failed.", request.url));
+    return NextResponse.redirect(new URL("/prodects/create?error=Validation failed.", request.url), 303);
   }
 
   let uploadedImagePath: string | null = null;
@@ -33,10 +33,11 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.redirect(
-      new URL("/ProdectWebController?success=Prodect created successfully.", request.url)
+      new URL("/ProdectWebController?success=Prodect created successfully.", request.url),
+      303
     );
   } catch {
     await deleteImageFile(uploadedImagePath);
-    return NextResponse.redirect(new URL("/prodects/create?error=Unexpected server error.", request.url));
+    return NextResponse.redirect(new URL("/prodects/create?error=Unexpected server error.", request.url), 303);
   }
 }

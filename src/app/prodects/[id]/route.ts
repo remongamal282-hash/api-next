@@ -4,13 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { deleteImageFile, saveImageFile } from "@/lib/upload";
 import { parseUpdateProdectWebFormData } from "@/lib/validation";
+import { isUuidV4 } from "@/utils/uuid";
 
 export const runtime = "nodejs";
 
-function parseId(rawId: string): number | null {
-  const parsed = Number(rawId);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
+function parseId(rawId: string): string | null {
+  return isUuidV4(rawId) ? rawId : null;
 }
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {

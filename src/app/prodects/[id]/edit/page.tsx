@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { ProdectEditForm } from "@/components/prodect-edit-form";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromCookies } from "@/lib/session";
+import { isUuidV4 } from "@/utils/uuid";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -14,12 +15,11 @@ export default async function EditProdectPage({ params }: Props) {
   }
 
   const { id } = await params;
-  const prodectId = Number(id);
-  if (!Number.isInteger(prodectId)) {
+  if (!isUuidV4(id)) {
     notFound();
   }
 
-  const prodect = await prisma.prodects.findUnique({ where: { id: prodectId } });
+  const prodect = await prisma.prodects.findUnique({ where: { id } });
   if (!prodect) {
     notFound();
   }

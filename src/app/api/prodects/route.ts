@@ -1,40 +1,38 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { env } from "@/lib/env";
-import {
-  prodectNotFoundResponse,
-  tooManyRequestsResponse,
-  unauthorizedApiKeyResponse,
-  unexpectedServerErrorResponse,
-  validationFailedResponse
-} from "@/lib/api";
+import { prodectNotFoundResponse, tooManyRequestsResponse, unexpectedServerErrorResponse, validationFailedResponse } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-import { consumeRateLimit } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/request";
+import { requireAuth } from "@/middlewares/auth";
+import { requireRole } from "@/middlewares/rbac";
+import { checkRateLimit } from "@/middlewares/rate-limit";
 import { deleteImageFile, saveImageFile } from "@/lib/upload";
 import { parseStoreProdectFormData } from "@/lib/validation";
+import { applyCorsHeaders, ensureCors } from "@/utils/cors";
 
 export const runtime = "nodejs";
 
 function checkReadLimit(request: NextRequest) {
-  const ip = getClientIp(request);
-  return consumeRateLimit("api-read", ip, 60, 60_000);
+  return checkRateLimit(request, "api-read", 60, 60_000);
 }
 
 function checkWriteLimit(request: NextRequest) {
-  const identity = request.headers.get("x-api-key") || getClientIp(request);
-  return consumeRateLimit("api-write", identity, 5, 60_000);
-}
-
-function hasValidApiKey(request: NextRequest) {
-  const provided = request.headers.get("x-api-key");
-  return provided === env.ADMIN_API_KEY;
+  return checkRateLimit(request, "api-write", 5, 60_000);
 }
 
 export async function GET(request: NextRequest) {
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
+  }
+
   const rate = checkReadLimit(request);
   if (!rate.allowed) {
-    return tooManyRequestsResponse(rate.retryAfter);
+    return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
+  }
+
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) {
+    return applyCorsHeaders(authResult, cors.origin);
   }
 
   try {
@@ -55,30 +53,41 @@ export async function GET(request: NextRequest) {
     });
 
     if (normalizedSearch && prodects.length === 0) {
-      return prodectNotFoundResponse();
+      return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
     }
 
-    return NextResponse.json(prodects);
+    return applyCorsHeaders(NextResponse.json(prodects), cors.origin);
   } catch {
-    return unexpectedServerErrorResponse();
+    return applyCorsHeaders(unexpectedServerErrorResponse(), cors.origin);
   }
 }
 
 export async function POST(request: NextRequest) {
-  const rate = checkWriteLimit(request);
-  if (!rate.allowed) {
-    return tooManyRequestsResponse(rate.retryAfter);
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
   }
 
-  if (!hasValidApiKey(request)) {
-    return unauthorizedApiKeyResponse();
+  const rate = checkWriteLimit(request);
+  if (!rate.allowed) {
+    return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
+  }
+
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) {
+    return applyCorsHeaders(authResult, cors.origin);
+  }
+
+  const forbidden = requireRole(authResult, ["ADMIN"]);
+  if (forbidden) {
+    return applyCorsHeaders(forbidden, cors.origin);
   }
 
   const formData = await request.formData();
   const parsed = parseStoreProdectFormData(formData);
 
   if (!parsed.success) {
-    return validationFailedResponse(parsed.error.flatten().fieldErrors);
+    return applyCorsHeaders(validationFailedResponse(parsed.error.flatten().fieldErrors), cors.origin);
   }
 
   let uploadedImagePath: string | null = null;
@@ -93,9 +102,18 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    return NextResponse.json(created, { status: 201 });
+    return applyCorsHeaders(NextResponse.json(created, { status: 201 }), cors.origin);
   } catch {
     await deleteImageFile(uploadedImagePath);
-    return unexpectedServerErrorResponse();
+    return applyCorsHeaders(unexpectedServerErrorResponse(), cors.origin);
   }
+}
+
+export async function OPTIONS(request: NextRequest) {
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
+  }
+
+  return applyCorsHeaders(new NextResponse(null, { status: 204 }), cors.origin);
 }

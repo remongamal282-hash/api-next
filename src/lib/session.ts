@@ -11,7 +11,7 @@ export type SimpleSession = {
   sid: string;
   simple_auth: true;
   simple_auth_user: string;
-  simple_auth_user_id: number;
+  simple_auth_user_id: string;
 };
 
 async function signSession(session: SimpleSession): Promise<string> {
@@ -30,7 +30,7 @@ export async function verifySession(token: string | undefined): Promise<SimpleSe
     if (
       payload.simple_auth !== true ||
       typeof payload.simple_auth_user !== "string" ||
-      typeof payload.simple_auth_user_id !== "number" ||
+      typeof payload.simple_auth_user_id !== "string" ||
       typeof payload.sid !== "string"
     ) {
       return null;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
+import { getSecurityHeaders } from "@/utils/security-headers";
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -8,7 +9,10 @@ export async function middleware(request: NextRequest) {
     pathname === "/" || pathname.startsWith("/ProdectWebController") || pathname.startsWith("/prodects");
 
   if (!isProtectedPath) {
-    return NextResponse.next();
+    const response = NextResponse.next();
+    const headers = getSecurityHeaders();
+    Object.entries(headers).forEach(([key, value]) => response.headers.set(key, value));
+    return response;
   }
 
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -16,12 +20,18 @@ export async function middleware(request: NextRequest) {
 
   if (!session?.simple_auth) {
     const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    const response = NextResponse.redirect(loginUrl);
+    const headers = getSecurityHeaders();
+    Object.entries(headers).forEach(([key, value]) => response.headers.set(key, value));
+    return response;
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  const headers = getSecurityHeaders();
+  Object.entries(headers).forEach(([key, value]) => response.headers.set(key, value));
+  return response;
 }
 
 export const config = {
-  matcher: ["/", "/ProdectWebController/:path*", "/prodects/:path*"]
+  matcher: ["/", "/ProdectWebController/:path*", "/prodects/:path*", "/api/:path*"]
 };

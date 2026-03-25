@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type Props = {
-  id: number;
+  id: string;
 };
 
 export function ProdectDeleteButton({ id }: Props) {

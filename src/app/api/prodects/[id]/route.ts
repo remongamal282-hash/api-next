@@ -1,87 +1,100 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { env } from "@/lib/env";
 import {
   prodectNotFoundResponse,
   tooManyRequestsResponse,
-  unauthorizedApiKeyResponse,
   unexpectedServerErrorResponse,
   validationFailedResponse
 } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-import { consumeRateLimit } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/request";
+import { requireAuth } from "@/middlewares/auth";
+import { requireRole } from "@/middlewares/rbac";
+import { checkRateLimit } from "@/middlewares/rate-limit";
 import { deleteImageFile } from "@/lib/upload";
 import { updateProdectApiSchema } from "@/lib/validation";
+import { applyCorsHeaders, ensureCors } from "@/utils/cors";
+import { isUuidV4 } from "@/utils/uuid";
 
 export const runtime = "nodejs";
 
-function parseId(rawId: string): number | null {
-  const parsed = Number(rawId);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
+function parseId(rawId: string): string | null {
+  return isUuidV4(rawId) ? rawId : null;
 }
 
 function checkReadLimit(request: NextRequest) {
-  const ip = getClientIp(request);
-  return consumeRateLimit("api-read", ip, 60, 60_000);
+  return checkRateLimit(request, "api-read", 60, 60_000);
 }
 
 function checkWriteLimit(request: NextRequest) {
-  const identity = request.headers.get("x-api-key") || getClientIp(request);
-  return consumeRateLimit("api-write", identity, 5, 60_000);
-}
-
-function hasValidApiKey(request: NextRequest) {
-  const provided = request.headers.get("x-api-key");
-  return provided === env.ADMIN_API_KEY;
+  return checkRateLimit(request, "api-write", 5, 60_000);
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
+  }
+
   const rate = checkReadLimit(request);
   if (!rate.allowed) {
-    return tooManyRequestsResponse(rate.retryAfter);
+    return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
+  }
+
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) {
+    return applyCorsHeaders(authResult, cors.origin);
   }
 
   const { id } = await context.params;
   const prodectId = parseId(id);
-  if (!prodectId) return prodectNotFoundResponse();
+  if (!prodectId) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
 
   try {
     const prodect = await prisma.prodects.findUnique({
       where: { id: prodectId }
     });
 
-    if (!prodect) return prodectNotFoundResponse();
-    return NextResponse.json(prodect);
+    if (!prodect) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
+    return applyCorsHeaders(NextResponse.json(prodect), cors.origin);
   } catch {
-    return unexpectedServerErrorResponse();
+    return applyCorsHeaders(unexpectedServerErrorResponse(), cors.origin);
   }
 }
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const rate = checkWriteLimit(request);
-  if (!rate.allowed) {
-    return tooManyRequestsResponse(rate.retryAfter);
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
   }
 
-  if (!hasValidApiKey(request)) {
-    return unauthorizedApiKeyResponse();
+  const rate = checkWriteLimit(request);
+  if (!rate.allowed) {
+    return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
+  }
+
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) {
+    return applyCorsHeaders(authResult, cors.origin);
+  }
+
+  const forbidden = requireRole(authResult, ["ADMIN"]);
+  if (forbidden) {
+    return applyCorsHeaders(forbidden, cors.origin);
   }
 
   const { id } = await context.params;
   const prodectId = parseId(id);
-  if (!prodectId) return prodectNotFoundResponse();
+  if (!prodectId) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
 
   try {
     const body = await request.json();
     const parsed = updateProdectApiSchema.safeParse(body);
     if (!parsed.success) {
-      return validationFailedResponse(parsed.error.flatten().fieldErrors);
+      return applyCorsHeaders(validationFailedResponse(parsed.error.flatten().fieldErrors), cors.origin);
     }
 
     const existing = await prisma.prodects.findUnique({ where: { id: prodectId } });
-    if (!existing) return prodectNotFoundResponse();
+    if (!existing) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
 
     const updated = await prisma.prodects.update({
       where: { id: prodectId },
@@ -92,35 +105,55 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       }
     });
 
-    return NextResponse.json(updated);
+    return applyCorsHeaders(NextResponse.json(updated), cors.origin);
   } catch {
-    return unexpectedServerErrorResponse();
+    return applyCorsHeaders(unexpectedServerErrorResponse(), cors.origin);
   }
 }
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const rate = checkWriteLimit(request);
-  if (!rate.allowed) {
-    return tooManyRequestsResponse(rate.retryAfter);
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
   }
 
-  if (!hasValidApiKey(request)) {
-    return unauthorizedApiKeyResponse();
+  const rate = checkWriteLimit(request);
+  if (!rate.allowed) {
+    return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
+  }
+
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) {
+    return applyCorsHeaders(authResult, cors.origin);
+  }
+
+  const forbidden = requireRole(authResult, ["ADMIN"]);
+  if (forbidden) {
+    return applyCorsHeaders(forbidden, cors.origin);
   }
 
   const { id } = await context.params;
   const prodectId = parseId(id);
-  if (!prodectId) return prodectNotFoundResponse();
+  if (!prodectId) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
 
   try {
     const existing = await prisma.prodects.findUnique({ where: { id: prodectId } });
-    if (!existing) return prodectNotFoundResponse();
+    if (!existing) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);
 
     await prisma.prodects.delete({ where: { id: prodectId } });
     await deleteImageFile(existing.image);
 
-    return NextResponse.json({ message: "Prodect deleted successfully." });
+    return applyCorsHeaders(NextResponse.json({ message: "Prodect deleted successfully." }), cors.origin);
   } catch {
-    return unexpectedServerErrorResponse();
+    return applyCorsHeaders(unexpectedServerErrorResponse(), cors.origin);
   }
+}
+
+export async function OPTIONS(request: NextRequest) {
+  const cors = ensureCors(request);
+  if (cors.blocked) {
+    return NextResponse.json({ message: "Origin not allowed." }, { status: 403 });
+  }
+
+  return applyCorsHeaders(new NextResponse(null, { status: 204 }), cors.origin);
 }

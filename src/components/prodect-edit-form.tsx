@@ -7,7 +7,7 @@ import { FormEvent, useState } from "react";
 
 type Props = {
   prodect: {
-    id: number;
+    id: string;
     name: string;
     descripshin: string;
     price: string;

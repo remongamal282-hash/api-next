@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
 
   if (!username || !password) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(invalidCredentialsMessage)}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(invalidCredentialsMessage)}`, request.url),
+      303
     );
   }
 
@@ -28,18 +29,20 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(invalidCredentialsMessage)}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(invalidCredentialsMessage)}`, request.url),
+      303
     );
   }
 
   const validPassword = await bcrypt.compare(password, user.password);
   if (!validPassword) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(invalidCredentialsMessage)}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(invalidCredentialsMessage)}`, request.url),
+      303
     );
   }
 
-  const response = NextResponse.redirect(new URL("/ProdectWebController", request.url));
+  const response = NextResponse.redirect(new URL("/ProdectWebController", request.url), 303);
   await setSessionCookie(response, {
     sid: randomUUID(),
     simple_auth: true,
