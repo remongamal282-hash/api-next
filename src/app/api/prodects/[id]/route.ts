@@ -40,11 +40,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
   }
 
-  const authResult = await requireAuth(request);
-  if (authResult instanceof NextResponse) {
-    return applyCorsHeaders(authResult, cors.origin);
-  }
-
   const { id } = await context.params;
   const prodectId = parseId(id);
   if (!prodectId) return applyCorsHeaders(prodectNotFoundResponse(), cors.origin);

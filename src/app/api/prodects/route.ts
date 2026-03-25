@@ -30,11 +30,6 @@ export async function GET(request: NextRequest) {
     return applyCorsHeaders(tooManyRequestsResponse(rate.retryAfter), cors.origin);
   }
 
-  const authResult = await requireAuth(request);
-  if (authResult instanceof NextResponse) {
-    return applyCorsHeaders(authResult, cors.origin);
-  }
-
   try {
     const searchTerm = request.nextUrl.searchParams.get("search") ?? request.nextUrl.searchParams.get("name");
     const normalizedSearch = searchTerm?.trim() || "";
